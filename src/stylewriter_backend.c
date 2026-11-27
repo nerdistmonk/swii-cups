@@ -33,6 +33,8 @@
 #define SWII_QUERY_PAUSE_US 200000L
 #define SWII_RESET_SETTLE_S 2
 #define SWII_DEFAULT_SPEED B57600
+/* Must match SWII_DEFAULT_SPEED. Used to compare against the current rate. */
+#define SWII_DEFAULT_BPS 57600UL
 #define SWII_MAX_FRAME (16UL * 1024 * 1024)
 #define SWII_G_CHUNK 0x4000
 #define SWII_URI_PREFIX "stylewriter:"
@@ -44,6 +46,7 @@ static int g_paper_warning;
 static volatile sig_atomic_t g_cancel;
 static unsigned char *g_payload;
 static size_t g_payload_cap;
+static unsigned long g_speed = SWII_DEFAULT_BPS;
 
 static void fail_job(const char *fmt, ...)
 	__attribute__((noreturn, format(printf, 1, 2)));
@@ -64,6 +67,29 @@ static int raw_write(const unsigned char *buf, size_t len)
 	return 0;
 }
 
+/*
+ * The Mac sends 'l' at job end while the printer is at 230400, then the port
+ * returns to the default rate. Best effort: also runs on the failure path.
+ * The printer's reply to 'l' is not verified.
+ */
+static void restore_speed(void)
+{
+	static const unsigned char l = 'l';
+	struct termios t;
+
+	if(g_fd < 0 || g_speed == SWII_DEFAULT_BPS)
+		return;
+	g_speed = SWII_DEFAULT_BPS;
+	raw_write(&l, 1);
+	tcdrain(g_fd);
+	if(tcgetattr(g_fd, &t) < 0)
+		return;
+	cfsetispeed(&t, SWII_DEFAULT_SPEED);
+	cfsetospeed(&t, SWII_DEFAULT_SPEED);
+	if(tcsetattr(g_fd, TCSADRAIN, &t) < 0)
+		fprintf(stderr, "WARNING: Unable to restore serial speed\n");
+}
+
 static void eject_quiet(void)
 {
 	static const unsigned char eject[4] = { 0xFF, 0xFF, 0xFF, 'I' };
@@ -79,6 +105,7 @@ static void check_cancel(void)
 	fprintf(stderr, "INFO: Job canceled\n");
 	if(g_page_active)
 		eject_quiet();
+	restore_speed();
 	exit(CUPS_BACKEND_CANCEL);
 }
 
@@ -92,6 +119,7 @@ static void fail_job(const char *fmt, ...)
 	va_end(ap);
 	fputc('\n', stderr);
 	eject_quiet();
+	restore_speed();
 	exit(CUPS_BACKEND_FAILED);
 }
 
@@ -319,6 +347,7 @@ static void set_speed(unsigned long bps)
 	t.c_cflag |= CS8;
 	if(tcsetattr(g_fd, TCSADRAIN, &t) < 0)
 		fail_job("Serial port setup failed: %s", strerror(errno));
+	g_speed = bps;
 }
 
 /* 'B' reports free printer input in 256-byte units. */
@@ -579,6 +608,7 @@ static void run_frames(void)
 	if(g_page_active)
 		fail_job("Filter ended in the middle of a page");
 	drain_output();
+	restore_speed();
 }
 
 static const char *device_path(char **argv)

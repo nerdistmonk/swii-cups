@@ -58,7 +58,7 @@ The original driver paused on `SIGUSR1`. That is gone. To hold the printer durin
 
 The device URI is `stylewriter:` followed by an absolute path to the serial port, for example `stylewriter:/dev/ttyUSB0`.
 
-The port opens at 57600 baud, 8N1. For the StyleWriter II, the driver switches the printer to 230400 baud before the page data. This follows the Mac driver's trace, but it has not been checked on hardware.
+The port opens at 57600 baud, 8N1. For the StyleWriter II, the driver switches the printer to 230400 baud before the page data. This follows the Mac driver's trace, but it has not been checked on hardware. When a job ends, including after a failure, the backend sends `l` and returns the port to 57600 baud.
 
 ## Options
 

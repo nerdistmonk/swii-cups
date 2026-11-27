@@ -182,16 +182,18 @@ During the page the Mac polls '2' and 'B' while it sends band data.
 
 This driver differs from the trace in these ways:
 
-- It does not wait for 0xF8 before each band, and it does not poll 'B' during
-  the page.  It checks paper and errors with '2' before each band, as the Mac
-  does.  The printer may need flow control; this has not been checked on
-  hardware.
+- Before each band it polls 'B' until the free space covers the whole band,
+  capped at 0xF7 x 256 bytes.  The Mac polls 'B' between 'G' blocks instead.
+  The 256-byte units and the cap are inferred from traces, not measured.
+  It checks paper and errors with '2' before each band, as the Mac does.
 - It uses fixed 256-row bands, like the Mac.  A 3780-row page therefore has
   14 full bands and one 196-row band.  Each band's data is split into 'G'
   blocks of at most 0x4000 bytes, as the Mac does.  The Mac sends 1 to 13 'G'
   blocks per band.  This has not been checked on hardware.
-- It sends neither 'E' nor 'l'.  The original lpstyl had code to send "El"
-  at the end of a page, commented out.
+- At job end, including after a failure, the backend sends 'l' and then returns the port to 57600.  The
+  Mac sends 'E' and then 'l' at 230400 and never returns the port to 57600
+  in the trace.  The driver does not send 'E'.  The printer's reply to 'l' is
+  unverified.
 
 
 Image Data
