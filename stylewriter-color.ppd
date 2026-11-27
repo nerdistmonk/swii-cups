@@ -51,12 +51,6 @@
 *Resolution 360dpi/360 DPI: "<</HWResolution [360 360]>>setpagedevice"
 *CloseUI: *Resolution
 
-*OpenUI *NoMargins/No Margins: Boolean
-*OrderDependency: 30 AnySetup *NoMargins
-*DefaultNoMargins: False
-*NoMargins True/Yes: ""
-*NoMargins False/No: ""
-*CloseUI: *NoMargins
 *CloseGroup: General
 
 *OpenGroup: Paper/Paper Handling

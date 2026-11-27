@@ -66,10 +66,9 @@ Set options with `lpadmin -o`, or in the CUPS web interface. For example:
 
     sudo lpadmin -p SW1500 -o InkCartridge=Black
 
-* `Model` (both PPDs) sets the printer model. It decides the page margins, pacing, and protocol details. The PPD default is used unless you change it.
+* `Model` (both PPDs) sets the printer model. It decides the printable width, pacing, and protocol details. The PPD default is used unless you change it.
 * `InkCartridge` (color PPD only) is `Black` (default) or `Color`. With `Black`, color pages print in black. Use it when only a black cartridge is installed.
 * `Quality` (color PPD only) is `1` (Normal, default) or `2` (High). It maps to the original driver's `-q 2`.
-* `NoMargins` (both PPDs) is `False` (default) or `True`. `True` skips the cropping that accounts for the top and left page margins, like the original `-m`. Use it only for files that don't take page margins into account, such as some Ghostscript samples.
 
 ## Building and installing
 

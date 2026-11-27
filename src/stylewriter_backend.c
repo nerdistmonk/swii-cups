@@ -31,7 +31,8 @@
 #define SWII_QUERY_PAUSE_US 200000L
 #define SWII_RESET_SETTLE_S 2
 #define SWII_DEFAULT_SPEED B57600
-#define SWII_MAX_PAYLOAD (0x10000 + 64)
+#define SWII_MAX_FRAME (16UL * 1024 * 1024)
+#define SWII_G_CHUNK 0x4000
 #define SWII_URI_PREFIX "stylewriter:"
 
 static int g_fd = -1;
@@ -39,7 +40,8 @@ static int g_in = STDIN_FILENO;
 static int g_page_active;
 static int g_paper_warning;
 static volatile sig_atomic_t g_cancel;
-static unsigned char g_payload[SWII_MAX_PAYLOAD];
+static unsigned char *g_payload;
+static size_t g_payload_cap;
 
 static void fail_job(const char *fmt, ...)
 	__attribute__((noreturn, format(printf, 1, 2)));
@@ -341,6 +343,18 @@ static void send_data(const unsigned char *data, unsigned long len)
 	write_all(&term, 1);
 }
 
+static void send_data_chunks(const unsigned char *data, unsigned long len)
+{
+	do
+	{
+		unsigned long n = len > SWII_G_CHUNK ? SWII_G_CHUNK : len;
+
+		send_data(data, n);
+		data += n;
+		len -= n;
+	} while(len > 0);
+}
+
 static void send_band(const unsigned char *p, unsigned long len)
 {
 	int flags = p[0];
@@ -357,7 +371,7 @@ static void send_band(const unsigned char *p, unsigned long len)
 	for(;;)
 	{
 		send_rect(color, top, bottom, right);
-		send_data(data, dlen);
+		send_data_chunks(data, dlen);
 		if(!(flags & SWF_BAND_FIRST))
 			return;
 
@@ -417,7 +431,7 @@ static void check_frame_len(unsigned char type, unsigned long len)
 	case SWF_WRITE:
 		return;
 	case SWF_BAND:
-		if(len <= SWF_BAND_HDR_SIZE || len - SWF_BAND_HDR_SIZE > 0xFFFF)
+		if(len <= SWF_BAND_HDR_SIZE)
 			fail_job("Invalid band frame length %lu", len);
 		return;
 	case SWF_RESET:
@@ -508,8 +522,17 @@ static void run_frames(void)
 			fail_job("Truncated frame header from filter");
 
 		len = swf_get_le32(hdr + 1);
-		if(len > SWII_MAX_PAYLOAD)
+		if(len > SWII_MAX_FRAME)
 			fail_job("Frame payload too large (%lu bytes)", len);
+		if(len > g_payload_cap)
+		{
+			unsigned char *p = realloc(g_payload, len);
+
+			if(!p)
+				fail_job("Out of memory for %lu byte frame", len);
+			g_payload = p;
+			g_payload_cap = len;
+		}
 		if(read_full(g_in, g_payload, len) != len)
 			fail_job("Truncated frame payload from filter");
 

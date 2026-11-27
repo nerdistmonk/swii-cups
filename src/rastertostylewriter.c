@@ -21,6 +21,8 @@
 #include "stylewriter.h"
 
 #define SWII_SPEED_HIGH 230400
+/* Band height used by the Mac driver's traces. */
+#define SWII_BAND_ROWS 256
 
 enum swii_model
 {
@@ -38,12 +40,10 @@ struct swii_options
 	enum swii_model model;
 	int colorCartridge;
 	int quality;
-	int noMargins;
 };
 
 struct swii_geometry
 {
-	long maxBuffer;
 	long printWidth;
 	long leftMargin;
 	long topMargin;
@@ -205,14 +205,13 @@ static int load_options(const char *optstr, struct swii_options *o)
 	cups_option_t *opts = NULL;
 	int num = cupsParseOptions(optstr, 0, &opts);
 	const char *ppd = getenv("PPD");
-	char model[32], cart[32], quality[16], margins[16];
+	char model[32], cart[32], quality[16];
 	size_t i;
 	int found = 0;
 
 	get_option(num, opts, ppd, "Model", "SW2", model, sizeof model);
 	get_option(num, opts, ppd, "InkCartridge", "Black", cart, sizeof cart);
 	get_option(num, opts, ppd, "Quality", "1", quality, sizeof quality);
-	get_option(num, opts, ppd, "NoMargins", "False", margins, sizeof margins);
 	cupsFreeOptions(num, opts);
 
 	for(i = 0; i < sizeof model_names / sizeof model_names[0]; i++)
@@ -248,48 +247,20 @@ static int load_options(const char *optstr, struct swii_options *o)
 		return -1;
 	}
 
-	if(strcmp(margins, "True") == 0)
-		o->noMargins = 1;
-	else if(strcmp(margins, "False") == 0)
-		o->noMargins = 0;
-	else
-	{
-		fprintf(stderr, "ERROR: Unknown NoMargins \"%s\"\n", margins);
-		return -1;
-	}
-
 	return 0;
 }
 
 static void model_geometry(const struct swii_options *o,
 		struct swii_geometry *g)
 {
-	if(o->model == MODEL_SW1)
-		g->maxBuffer = 0x2000;
-	else if(is_color_model(o->model))
-		g->maxBuffer = 0x8000;
-	else
-		g->maxBuffer = 0x4000;
-
+	/* CUPS rasters already cover the PPD imageable area; nothing to skip. */
 	if(is_color_model(o->model))
-	{
 		g->printWidth = 2919;
-		g->leftMargin = 72;
-	}
 	else
-	{
 		g->printWidth = 2879;
-		g->leftMargin = 90;
-	}
-	g->topMargin = 90;
-	g->bottomMargin = 90;
-
-	if(o->noMargins)
-	{
-		g->bottomMargin += g->topMargin;
-		g->topMargin = 0;
-		g->leftMargin = 0;
-	}
+	g->leftMargin = 0;
+	g->topMargin = 0;
+	g->bottomMargin = 0;
 }
 
 static int job_init(const struct swii_options *o)
@@ -521,9 +492,9 @@ static int emit_page(const struct swii_options *o, const struct swii_geometry *g
 		const struct swii_page *pg, unsigned int copies)
 {
 	struct swii_layout L;
-	unsigned char *chunk = NULL, *rowbuf = NULL, *tmp = NULL, *prevbuf = NULL;
-	size_t rowMax, chunkLen;
-	long y, chunkStart;
+	unsigned char *band = NULL, *rowbuf = NULL, *tmp = NULL, *prevbuf = NULL;
+	size_t rowMax, bandLen;
+	long y, bandTop, bandEnd;
 	unsigned int c;
 	int ret = -1;
 
@@ -532,10 +503,10 @@ static int emit_page(const struct swii_options *o, const struct swii_geometry *g
 	rowMax = (size_t)L.nPlanes * swii_encode_max((size_t)L.printwidth,
 			(size_t)L.printRowBytes);
 	rowbuf = malloc(rowMax);
-	chunk = malloc((size_t)g->maxBuffer + rowMax);
+	band = malloc((size_t)SWII_BAND_ROWS * rowMax);
 	tmp = malloc((size_t)L.printwidth + 8);
 	prevbuf = malloc((size_t)L.printwidth + 8);
-	if(!rowbuf || !chunk || !tmp || !prevbuf)
+	if(!rowbuf || !band || !tmp || !prevbuf)
 	{
 		fprintf(stderr, "ERROR: Out of memory for encoding\n");
 		goto out;
@@ -546,29 +517,23 @@ static int emit_page(const struct swii_options *o, const struct swii_geometry *g
 		if(page_start(o) < 0)
 			goto out;
 
-		if(L.end > L.top)
+		for(bandTop = L.top; bandTop < L.end; bandTop = bandEnd)
 		{
-			chunkLen = 0;
-			chunkStart = L.top;
-			for(y = L.top; y < L.end; y++)
+			bandEnd = bandTop + SWII_BAND_ROWS;
+			if(bandEnd > L.end)
+				bandEnd = L.end;
+
+			bandLen = 0;
+			for(y = bandTop; y < bandEnd; y++)
 			{
+				/* The first row of each band is absolute, not a delta. */
 				size_t rowLen = encode_row(pg, &L, y,
-						L.delta && y > L.top, tmp, prevbuf, rowbuf);
+						L.delta && y > bandTop, tmp, prevbuf, rowbuf);
 
-				/* Flush before a row that would overflow the printer buffer. */
-				if(chunkLen > 0 && chunkLen + rowLen >= (size_t)g->maxBuffer)
-				{
-					if(emit_band(&L, chunkStart, y - 1, chunk, chunkLen) < 0)
-						goto out;
-					chunkLen = 0;
-					chunkStart = y;
-					rowLen = encode_row(pg, &L, y, 0, tmp, prevbuf, rowbuf);
-				}
-
-				memcpy(chunk + chunkLen, rowbuf, rowLen);
-				chunkLen += rowLen;
+				memcpy(band + bandLen, rowbuf, rowLen);
+				bandLen += rowLen;
 			}
-			if(emit_band(&L, chunkStart, L.end - 1, chunk, chunkLen) < 0)
+			if(emit_band(&L, bandTop, bandEnd - 1, band, bandLen) < 0)
 				goto out;
 		}
 
@@ -579,7 +544,7 @@ static int emit_page(const struct swii_options *o, const struct swii_geometry *g
 
 out:
 	free(rowbuf);
-	free(chunk);
+	free(band);
 	free(tmp);
 	free(prevbuf);
 	return ret;
