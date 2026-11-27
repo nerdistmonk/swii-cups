@@ -1,5 +1,7 @@
 # swii-cups
 
+## NOTE: Driver is only partially working as of now, it can print text perfectly on a real StyleWriter II, but buckles when printing graphics.
+
 A CUPS driver for Apple StyleWriter printers, for modern Linux.
 
 This is a forked rewrite of lpstyl by Monroe Williams (<https://github.com/Godzil/lpstyl>). The original driver was written for NetBSD and other old Unix systems, and it needed obsolete system features and install paths. This version is rebuilt as a CUPS filter and backend, built with CMake and GCC.
