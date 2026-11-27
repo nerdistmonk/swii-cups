@@ -26,6 +26,9 @@
 
 #define SWII_USLEEP_US 100000L
 #define SWII_STATUS_TIMEOUT_MS 10000
+/* A silent printer at the wrong rate would otherwise cost the full status timeout. */
+#define SWII_PROBE_TIMEOUT_MS 2000
+#define SWII_HIGH_BPS 230400UL
 #define SWII_RESET_TIMEOUT_S 60
 #define SWII_ROOM_TIMEOUT_S 60
 #define SWII_PAPER_RETRY_S 5
@@ -50,6 +53,8 @@ static volatile sig_atomic_t g_cancel;
 static unsigned char *g_payload;
 static size_t g_payload_cap;
 static unsigned long g_speed = SWII_DEFAULT_BPS;
+/* Set when the printer is at 57600 and must be switched with 'h' once. */
+static int g_switch_pending;
 
 static void fail_job(const char *fmt, ...)
 	__attribute__((noreturn, format(printf, 1, 2)));
@@ -71,26 +76,18 @@ static int raw_write(const unsigned char *buf, size_t len)
 }
 
 /*
- * The Mac sends 'l' at job end while the printer is at 230400, then the port
- * returns to the default rate. Best effort: also runs on the failure path.
- * The printer's reply to 'l' is not verified.
+ * The Mac sends 'l' at job end while the printer is at 230400.  The printer
+ * keeps 230400 after the job, so the host port is left at its current rate:
+ * the next job probes 230400 first.  The printer's reply to 'l' is not verified.
  */
-static void restore_speed(void)
+static void finish_link(void)
 {
 	static const unsigned char l = 'l';
-	struct termios t;
 
 	if(g_fd < 0 || g_speed == SWII_DEFAULT_BPS)
 		return;
-	g_speed = SWII_DEFAULT_BPS;
 	raw_write(&l, 1);
 	tcdrain(g_fd);
-	if(tcgetattr(g_fd, &t) < 0)
-		return;
-	cfsetispeed(&t, SWII_DEFAULT_SPEED);
-	cfsetospeed(&t, SWII_DEFAULT_SPEED);
-	if(tcsetattr(g_fd, TCSADRAIN, &t) < 0)
-		fprintf(stderr, "WARNING: Unable to restore serial speed\n");
 }
 
 static void eject_quiet(void)
@@ -108,7 +105,7 @@ static void check_cancel(void)
 	fprintf(stderr, "INFO: Job canceled\n");
 	if(g_page_active)
 		eject_quiet();
-	restore_speed();
+	finish_link();
 	exit(CUPS_BACKEND_CANCEL);
 }
 
@@ -122,7 +119,7 @@ static void fail_job(const char *fmt, ...)
 	va_end(ap);
 	fputc('\n', stderr);
 	eject_quiet();
-	restore_speed();
+	finish_link();
 	exit(CUPS_BACKEND_FAILED);
 }
 
@@ -353,6 +350,39 @@ static void set_speed(unsigned long bps)
 	g_speed = bps;
 }
 
+static int probe_printer(unsigned long bps)
+{
+	set_speed(bps);
+	discard_input();
+	send_cmd('2');
+	return read_reply(SWII_PROBE_TIMEOUT_MS) >= 0;
+}
+
+/*
+ * A printer left at 230400 by an earlier job answers at 230400.  A printer
+ * that was power-cycled is at 57600 and stays silent at 230400.
+ */
+static void negotiate_speed(void)
+{
+	if(probe_printer(SWII_HIGH_BPS))
+		return;
+	if(!probe_printer(SWII_DEFAULT_BPS))
+		fail_job("Printer did not respond at 230400 or 57600 baud");
+	g_switch_pending = 1;
+}
+
+static void speed_frame(unsigned long bps)
+{
+	static const unsigned char h = 'h';
+
+	if(g_switch_pending && bps == SWII_HIGH_BPS)
+	{
+		write_all(&h, 1);
+		g_switch_pending = 0;
+	}
+	set_speed(bps);
+}
+
 /* 'B' reports free printer input in 256-byte units. */
 static void wait_for_room(unsigned long need)
 {
@@ -364,8 +394,6 @@ static void wait_for_room(unsigned long need)
 
 		if(b < 0)
 			fail_job("Printer did not respond to buffer query");
-		/* TEMPORARY measurement log, remove after the buffer is measured. */
-		fprintf(stderr, "INFO: buffer B=0x%02x need=%lu\n", b, need);
 		if((unsigned long)b * 256UL >= need)
 			return;
 		if(now_ms() > deadline)
@@ -554,7 +582,7 @@ static void run_frame(unsigned char type, unsigned long len)
 		discard_input();
 		break;
 	case SWF_SPEED:
-		set_speed(swf_get_le32(g_payload));
+		speed_frame(swf_get_le32(g_payload));
 		break;
 	case SWF_RESET:
 		reset_printer();
@@ -630,7 +658,7 @@ static void run_frames(void)
 	if(g_page_active)
 		fail_job("Filter ended in the middle of a page");
 	drain_output();
-	restore_speed();
+	finish_link();
 }
 
 static const char *device_path(char **argv)
@@ -744,6 +772,7 @@ int main(int argc, char *argv[])
 			fail_job("Unable to open job file %s: %s", argv[6], strerror(errno));
 	}
 	open_printer(path);
+	negotiate_speed();
 
 	run_frames();
 	return CUPS_BACKEND_OK;
