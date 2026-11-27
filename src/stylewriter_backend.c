@@ -40,6 +40,8 @@
  * (type, LE16 length, data, terminator). */
 #define SWII_RECT_LEN 9
 #define SWII_G_OVERHEAD 4
+/* 'B' reads 0xF8 at job start, but 0xF7 once a page has printed. */
+#define SWII_BUF_IDLE 0xF7
 #define SWII_URI_PREFIX "stylewriter:"
 
 static int g_fd = -1;
@@ -374,6 +376,36 @@ static void wait_for_room(unsigned long need)
 	}
 }
 
+/* The printer appears to discard unconsumed input at the formfeed, so wait
+ * until the buffer is drained first. Progress resets the timeout, so a slow
+ * print does not fail. */
+static void wait_for_drain(void)
+{
+	long long deadline = now_ms() + SWII_ROOM_TIMEOUT_S * 1000LL;
+	int best = -1;
+
+	for(;;)
+	{
+		int b = get_status('B');
+
+		if(b < 0)
+			fail_job("Printer did not respond to buffer query");
+		if(b >= SWII_BUF_IDLE)
+			return;
+		if(b > best)
+		{
+			best = b;
+			deadline = now_ms() + SWII_ROOM_TIMEOUT_S * 1000LL;
+		}
+		if(now_ms() > deadline)
+		{
+			fprintf(stderr, "WARNING: Printer buffer did not drain before the end of the page\n");
+			return;
+		}
+		nap(SWII_USLEEP_US);
+	}
+}
+
 static void send_rect(int type, unsigned long top, unsigned long bottom,
 		unsigned long right)
 {
@@ -472,6 +504,7 @@ static void end_page(int poll, int wp)
 	static const unsigned char formfeed = 0x0C;
 
 	check_status(wp, 0);
+	wait_for_drain();
 	write_all(&formfeed, 1);
 	if(poll)
 	{

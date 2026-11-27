@@ -88,8 +88,8 @@ Type 1 codes (prefix these with "\xFF\xFF\xFF"):
 	indicate a completely full buffer on either model.
 	On the StyleWriter II, 0xF8 was seen only at job start.  During a
 	page the Mac read 0x08 to 0x24, and it sent bands without waiting
-	for 0xF8 between them.  Whether the printer reports 0xF8 during a
-	long page is not known.
+	for 0xF8 between them.  After a job the idle printer read 0xF7 (at
+	57600 baud), so the driver waits for 0xF7 before the form feed.
 
 "p" - Distinguishes between the printers that return 'CS'.  Known return 
 	values:
@@ -179,6 +179,9 @@ Page end:
 	'E' and 'l'
 
 During the page the Mac polls '2' and 'B' while it sends band data.
+The driver waits for 'B' to reach 0xF7 before the form feed.  The printer
+seems to discard unconsumed buffer at form feed: in job 192 it went idle
+1.8 s after the form feed with about 53 KB unconsumed (inferred from timing).
 
 This driver differs from the trace in these ways:
 
