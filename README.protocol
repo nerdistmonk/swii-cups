@@ -193,9 +193,10 @@ This driver differs from the trace in these ways:
   blocks of at most 0x4000 bytes, ending on row boundaries.  The Mac never
   splits a row across blocks (48 of 48 interior boundaries in the trace are
   row-aligned), and its XOR reference carries across them.  The Mac sends 1 to
-  13 'G' blocks per band.  This has not been checked on hardware.
-- The driver stays at 57600 for the whole job (test in progress).  It does not send
-  'h' or the 230400 switch, so the printer should stay at 57600.  The Mac sends
+  13 'G' blocks per band.  Landscape and photo jobs have printed on hardware with
+  this split.
+- The driver stays at 57600 for the whole job.  It does not send
+  'h' or the 230400 switch, so the printer stays at 57600.  The Mac sends
   'E' and then 'l' at 230400 and never returns the port to 57600 in the trace.
   The driver does not send 'E'.  Sending 'l' does not return the printer to 57600
   (observed: a probe at 57600 got no reply after a job that sent 'l').

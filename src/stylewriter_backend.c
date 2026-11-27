@@ -71,9 +71,9 @@ static int raw_write(const unsigned char *buf, size_t len)
 }
 
 /*
- * The Mac sends 'l' at job end while the printer is at 230400, then the port
- * returns to the default rate. Best effort: also runs on the failure path.
- * The printer's reply to 'l' is not verified.
+ * Returns the port to the default rate after a raised-speed job. The backend
+ * stays at 57600 now, so this does nothing in that case. The printer's reply
+ * to 'l' is not verified.
  */
 static void restore_speed(void)
 {
