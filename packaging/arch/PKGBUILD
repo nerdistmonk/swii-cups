@@ -1,0 +1,40 @@
+pkgname=swii-cups-git
+pkgver=r0.0000000
+pkgrel=1
+pkgdesc='CUPS filter and backend for Apple StyleWriter printers (git version)'
+arch=('x86_64')
+url='https://github.com/nerdistmonk/swii-cups'
+license=('BSD-2-Clause')
+depends=('cups')
+makedepends=('cmake' 'gcc' 'git')
+optdepends=('cups-filters: convert PDF and PostScript jobs to raster'
+            'ghostscript: rasterize PostScript for cups-filters')
+provides=('swii-cups')
+conflicts=('swii-cups')
+source=("$pkgname::git+$url.git")
+sha256sums=('SKIP')
+
+pkgver() {
+  cd "$pkgname"
+  printf 'r%s.%s' "$(git rev-list --count HEAD)" "$(git rev-parse --short HEAD)"
+}
+
+build() {
+  cmake -S "$pkgname" -B build \
+    -DCMAKE_BUILD_TYPE=None \
+    -DCMAKE_INSTALL_PREFIX=/usr \
+    -DSWII_CUPS_SERVERBIN=/usr/lib/cups \
+    -DSWII_CUPS_MODELDIR=/usr/share/cups/model
+  cmake --build build
+}
+
+check() {
+  ctest --test-dir build --output-on-failure
+}
+
+package() {
+  DESTDIR="$pkgdir" cmake --install build
+  install -Dm644 "$pkgname/LICENSE" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+  install -Dm644 "$pkgname/README.md" "$pkgdir/usr/share/doc/$pkgname/README.md"
+  install -Dm644 "$pkgname/README.protocol" "$pkgdir/usr/share/doc/$pkgname/README.protocol"
+}
