@@ -215,49 +215,39 @@ static void set_paper_warning(int on)
 	fprintf(stderr, "STATE: %cmedia-empty-warning\n", on ? '+' : '-');
 }
 
-/* The Mac driver only queries '2' and 'B' while bands are in flight. */
-static void poll_all(int *c2, int *c)
+/* Checks paper and errors once. The 'B' buffer status is not polled. */
+static void check_status(int wp, int can_handle)
 {
-	*c2 = get_status('2');
-	*c = get_status('B');
-}
+	int c2 = get_status('2');
 
-static void wait_status(int stat, int wp, int can_handle)
-{
-	int c2, c;
-
-	poll_all(&c2, &c);
-	while(c != stat)
+	if(c2 < 0)
+		fail_job("Printer did not respond to status query");
+	switch(c2)
 	{
-		if(c < 0 || c2 < 0)
-			fail_job("Printer did not respond to status query");
-		nap(SWII_USLEEP_US);
-		switch(c2)
+	case 4:
+		if(can_handle)
+			return;
+		if(!wp)
 		{
-		case 4:
-			if(can_handle)
-				return;
-			if(!wp)
-			{
-				set_paper_warning(1);
-				fail_job("Out of paper at a bad time");
-			}
-			do
-			{
-				fprintf(stderr, "WARNING: Out of paper, waiting for paper\n");
-				cancel_sleep(SWII_PAPER_RETRY_S);
-				send_cmd('S');
-				c2 = get_status('2');
-			} while(c2 == 4);
-			set_paper_warning(0);
-			break;
-		case 0x80:
-		case 0:
-			break;
-		default:
-			fail_job("Printer reported error status 0x%02x", c2);
+			set_paper_warning(1);
+			fail_job("Out of paper at a bad time");
 		}
-		poll_all(&c2, &c);
+		do
+		{
+			fprintf(stderr, "WARNING: Out of paper, waiting for paper\n");
+			cancel_sleep(SWII_PAPER_RETRY_S);
+			send_cmd('S');
+			c2 = get_status('2');
+			if(c2 < 0)
+				fail_job("Printer did not respond to status query");
+		} while(c2 == 4);
+		set_paper_warning(0);
+		break;
+	case 0x80:
+	case 0:
+		break;
+	default:
+		fail_job("Printer reported error status 0x%02x", c2);
 	}
 }
 
@@ -353,18 +343,17 @@ static void send_data(const unsigned char *data, unsigned long len)
 
 static void send_band(const unsigned char *p, unsigned long len)
 {
-	int drain = p[0];
-	int flags = p[1];
-	unsigned long top = swf_get_le16(p + 2);
-	unsigned long bottom = swf_get_le16(p + 4);
-	unsigned long right = swf_get_le16(p + 6);
+	int flags = p[0];
+	unsigned long top = swf_get_le16(p + 1);
+	unsigned long bottom = swf_get_le16(p + 3);
+	unsigned long right = swf_get_le16(p + 5);
 	const unsigned char *data = p + SWF_BAND_HDR_SIZE;
 	unsigned long dlen = len - SWF_BAND_HDR_SIZE;
 	int color = (flags & SWF_BAND_COLOR) ? 'c' : 'R';
 	int wp = flags & SWF_BAND_WAITPAPER;
 
 	g_page_active = 1;
-	wait_status(drain, wp, 0);
+	check_status(wp, 0);
 	for(;;)
 	{
 		send_rect(color, top, bottom, right);
@@ -372,7 +361,7 @@ static void send_band(const unsigned char *p, unsigned long len)
 		if(!(flags & SWF_BAND_FIRST))
 			return;
 
-		wait_status(drain, wp, 1);
+		check_status(wp, 1);
 		if(get_status('2') != 4)
 		{
 			set_paper_warning(0);
@@ -399,11 +388,11 @@ static void send_band(const unsigned char *p, unsigned long len)
 	}
 }
 
-static void end_page(int poll, int drain, int wp)
+static void end_page(int poll, int wp)
 {
 	static const unsigned char formfeed = 0x0C;
 
-	wait_status(drain, wp, 0);
+	check_status(wp, 0);
 	write_all(&formfeed, 1);
 	if(poll)
 	{
@@ -415,7 +404,7 @@ static void end_page(int poll, int drain, int wp)
 			nap(SWII_USLEEP_US);
 		} while(c == 1);
 	}
-	wait_status(drain, wp, 0);
+	check_status(wp, 0);
 	g_page_active = 0;
 }
 
@@ -442,7 +431,7 @@ static void check_frame_len(unsigned char type, unsigned long len)
 		want = 4;
 		break;
 	case SWF_PAGEEND:
-		want = 3;
+		want = 2;
 		break;
 	default:
 		fail_job("Unknown frame type 0x%02x", type);
@@ -473,7 +462,7 @@ static void run_frame(unsigned char type, unsigned long len)
 		send_band(g_payload, len);
 		break;
 	case SWF_PAGEEND:
-		end_page(g_payload[0], g_payload[1], g_payload[2] & SWF_BAND_WAITPAPER);
+		end_page(g_payload[0], g_payload[1] & SWF_BAND_WAITPAPER);
 		break;
 	case SWF_ABORT:
 		fail_job("Job aborted by filter");

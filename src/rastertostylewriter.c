@@ -73,7 +73,6 @@ struct swii_layout
 	int delta;		/* XOR each row against the previous row */
 	int color;		/* bands carry KCMY data */
 	int combine;		/* OR every ink plane into K (Black cartridge) */
-	int drain;
 	int flags;
 	int poll;
 };
@@ -293,23 +292,6 @@ static void model_geometry(const struct swii_options *o,
 	}
 }
 
-static int drain_code(const struct swii_options *o)
-{
-	switch(o->model)
-	{
-	case MODEL_SW1:
-		return 0xA0;
-	case MODEL_SW1500:
-		return o->colorCartridge ? 0x87 : 0x9F;
-	case MODEL_SW2200:
-		return 0xA3;
-	case MODEL_SW2500:
-		return 0x80;
-	default:
-		return 0xF8;
-	}
-}
-
 static int job_init(const struct swii_options *o)
 {
 	if(send_frame(SWF_RESET, NULL, 0, NULL, 0) < 0)
@@ -352,11 +334,10 @@ static int page_start(const struct swii_options *o)
 
 static int page_end(const struct swii_layout *L)
 {
-	unsigned char b[3];
+	unsigned char b[2];
 
 	b[0] = (unsigned char)L->poll;
-	b[1] = (unsigned char)L->drain;
-	b[2] = (unsigned char)(L->flags & SWF_BAND_WAITPAPER);
+	b[1] = (unsigned char)(L->flags & SWF_BAND_WAITPAPER);
 	return send_frame(SWF_PAGEEND, b, sizeof b, NULL, 0);
 }
 
@@ -439,7 +420,7 @@ static void layout_setup(const struct swii_options *o,
 	long rowbytes = ((long)pg->width + 7) / 8;
 
 	L->top = g->topMargin;
-	L->end = (long)pg->height - g->bottomMargin - 1;
+	L->end = (long)pg->height - g->bottomMargin;
 	L->leftBytes = (g->leftMargin + 7) / 8;
 	L->printRowBytes = (g->printWidth + 7) / 8;
 	L->printwidth = rowbytes - L->leftBytes;
@@ -467,7 +448,6 @@ static void layout_setup(const struct swii_options *o,
 
 	L->combine = !L->color && pg->planes == 4;
 	L->delta = o->model != MODEL_SW1;
-	L->drain = drain_code(o);
 	L->poll = o->model != MODEL_SW1;
 	L->flags = (L->color ? SWF_BAND_COLOR : 0) |
 		(is_color_model(o->model) ? SWF_BAND_WAITPAPER : 0);
@@ -530,11 +510,10 @@ static int emit_band(const struct swii_layout *L, long first, long last,
 	if(first == L->top)
 		flags |= SWF_BAND_FIRST;
 
-	hdr[0] = (unsigned char)L->drain;
-	hdr[1] = (unsigned char)flags;
-	swf_put_le16(hdr + 2, (unsigned long)(first - L->top));
-	swf_put_le16(hdr + 4, (unsigned long)(last - L->top));
-	swf_put_le16(hdr + 6, (unsigned long)L->printWidth);
+	hdr[0] = (unsigned char)flags;
+	swf_put_le16(hdr + 1, (unsigned long)(first - L->top));
+	swf_put_le16(hdr + 3, (unsigned long)(last - L->top));
+	swf_put_le16(hdr + 5, (unsigned long)L->printWidth);
 	return send_frame(SWF_BAND, hdr, sizeof hdr, data, len);
 }
 

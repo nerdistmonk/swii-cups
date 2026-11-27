@@ -21,8 +21,9 @@ the printer's buffer, and not send too much data at one time.  One
 of the codes the driver can send causes the printer to return a
 byte which seems to indicate how full its buffer is.  The driver
 could potentially use this information to keep feeding data as
-quickly as possible, but it currently just waits for the buffer to
-drain completely before sending more data.
+quickly as possible.  The driver does not use it.  It checks paper and
+errors with '2' between bands, and sends the next band without waiting for
+the buffer to drain.
 
 This protocol is the main reason that the driver is a standalone
 program, and not simply a driver module in ghostscript.  When I
@@ -181,9 +182,11 @@ During the page the Mac polls '2' and 'B' while it sends band data.
 
 This driver differs from the trace in these ways:
 
-- It waits for 0xF8 before each band, as the original lpstyl did.  Whether
-  the StyleWriter II reports 0xF8 during a long page is not known.
-- It sizes each band to fill the printer's buffer, as the original did, so
+- It does not wait for 0xF8 before each band, and it does not poll 'B' during
+  the page.  It checks paper and errors with '2' before each band, as the Mac
+  does.  Bands are limited only by the driver's encoding buffer, so this has
+  not been checked on hardware; the printer may need flow control.
+- It sizes each band to the driver's encoding buffer, as the original did, so
   its bands are not always 256 rows.  This has not been checked on hardware.
 - It sends neither 'E' nor 'l'.  The original lpstyl had code to send "El"
   at the end of a page, commented out.

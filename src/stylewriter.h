@@ -19,13 +19,13 @@
 #define SWF_RESET 'I'
 /* Band: SWF_BAND_HDR_SIZE header bytes followed by encoded row data. */
 #define SWF_BAND 'B'
-/* 3 bytes: poll flag (1 = poll status '1' after the form feed), drain code, flags. */
+/* 2 bytes: poll flag (1 = poll status '1' after the form feed), flags. */
 #define SWF_PAGEEND 'P'
 /* Empty payload. Eject and fail the job. */
 #define SWF_ABORT 'A'
 
-/* Band header: u8 drain code, u8 flags, LE16 top, LE16 bottom, LE16 right. */
-#define SWF_BAND_HDR_SIZE 8
+/* Band header: u8 flags, LE16 top, LE16 bottom, LE16 right. */
+#define SWF_BAND_HDR_SIZE 7
 #define SWF_BAND_COLOR 0x01 /* 'c' rectangle and KCMY data instead of 'R' */
 #define SWF_BAND_FIRST 0x02 /* first band of a page: check for paper-out */
 #define SWF_BAND_WAITPAPER 0x04 /* color model: wait in place for paper mid-page */
