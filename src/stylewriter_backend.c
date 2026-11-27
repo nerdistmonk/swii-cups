@@ -364,8 +364,6 @@ static void wait_for_room(unsigned long need)
 
 		if(b < 0)
 			fail_job("Printer did not respond to buffer query");
-		/* TEMPORARY measurement log, remove after the buffer is measured. */
-		fprintf(stderr, "INFO: buffer B=0x%02x need=%lu\n", b, need);
 		if((unsigned long)b * 256UL >= need)
 			return;
 		if(now_ms() > deadline)
