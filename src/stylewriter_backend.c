@@ -28,7 +28,6 @@
 #define SWII_STATUS_TIMEOUT_MS 10000
 #define SWII_RESET_TIMEOUT_S 60
 #define SWII_ROOM_TIMEOUT_S 60
-#define SWII_ROOM_MAX (0xF7UL * 256UL)
 #define SWII_PAPER_RETRY_S 5
 #define SWII_QUERY_PAUSE_US 200000L
 #define SWII_RESET_SETTLE_S 2
@@ -37,6 +36,10 @@
 #define SWII_DEFAULT_BPS 57600UL
 #define SWII_MAX_FRAME (16UL * 1024 * 1024)
 #define SWII_G_CHUNK 0x4000
+/* Wire bytes of a rect (type, LE16 0, top, right, bottom) and of a G block
+ * (type, LE16 length, data, terminator). */
+#define SWII_RECT_LEN 9
+#define SWII_G_OVERHEAD 4
 #define SWII_URI_PREFIX "stylewriter:"
 
 static int g_fd = -1;
@@ -395,27 +398,24 @@ static void send_data(const unsigned char *data, unsigned long len)
 	write_all(&term, 1);
 }
 
+/* Waits for room before every G block after the first. The first block is
+ * covered by send_band's wait, because no query may fall between a rect and
+ * its first G block. */
 static void send_data_chunks(const unsigned char *data, unsigned long len)
 {
+	int first = 1;
+
 	do
 	{
 		unsigned long n = len > SWII_G_CHUNK ? SWII_G_CHUNK : len;
 
+		if(!first)
+			wait_for_room(n + SWII_G_OVERHEAD);
+		first = 0;
 		send_data(data, n);
 		data += n;
 		len -= n;
 	} while(len > 0);
-}
-
-/* Printer input one band needs: its rect, then G blocks of up to SWII_G_CHUNK,
- * each with a 3-byte header and a terminator. A band larger than the buffer
- * waits for the whole buffer. */
-static unsigned long band_room(unsigned long dlen)
-{
-	unsigned long chunks = dlen ? (dlen + SWII_G_CHUNK - 1) / SWII_G_CHUNK : 1;
-	unsigned long need = 9 + dlen + 4 * chunks;
-
-	return need > SWII_ROOM_MAX ? SWII_ROOM_MAX : need;
 }
 
 static void send_band(const unsigned char *p, unsigned long len)
@@ -426,15 +426,15 @@ static void send_band(const unsigned char *p, unsigned long len)
 	unsigned long right = swf_get_le16(p + 5);
 	const unsigned char *data = p + SWF_BAND_HDR_SIZE;
 	unsigned long dlen = len - SWF_BAND_HDR_SIZE;
+	unsigned long first = dlen > SWII_G_CHUNK ? SWII_G_CHUNK : dlen;
 	int color = (flags & SWF_BAND_COLOR) ? 'c' : 'R';
 	int wp = flags & SWF_BAND_WAITPAPER;
-	unsigned long room = band_room(dlen);
 
 	g_page_active = 1;
 	check_status(wp, 0);
 	for(;;)
 	{
-		wait_for_room(room);
+		wait_for_room(SWII_RECT_LEN + first + SWII_G_OVERHEAD);
 		send_rect(color, top, bottom, right);
 		send_data_chunks(data, dlen);
 		if(!(flags & SWF_BAND_FIRST))
