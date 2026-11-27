@@ -194,15 +194,11 @@ This driver differs from the trace in these ways:
   splits a row across blocks (48 of 48 interior boundaries in the trace are
   row-aligned), and its XOR reference carries across them.  The Mac sends 1 to
   13 'G' blocks per band.  This has not been checked on hardware.
-- Speed: the backend first probes at 230400 with '2'.  A printer left at 230400
-  by an earlier job answers, and the job runs with no 'h'.  If that probe is
-  silent, the backend probes at 57600.  If the printer answers there, the backend
-  sends 'h' at 57600, drains the output, and then switches to 230400, as the Mac
-  does.  A failed probe at both rates fails the job.  Not checked on hardware.
-  A pty test covers the probe order and the 'h' drain ordering (strace).
-- Sending 'l' does not return the printer to 57600 (observed: a probe at 57600
-  got no reply after a job that sent 'l').  The backend sends 'l' at the end of a
-  job at 230400, like the Mac.  The driver does not send 'E'.
+- The driver stays at 57600 for the whole job (test in progress).  It does not send
+  'h' or the 230400 switch, so the printer should stay at 57600.  The Mac sends
+  'E' and then 'l' at 230400 and never returns the port to 57600 in the trace.
+  The driver does not send 'E'.  Sending 'l' does not return the printer to 57600
+  (observed: a probe at 57600 got no reply after a job that sent 'l').
 
 
 Image Data

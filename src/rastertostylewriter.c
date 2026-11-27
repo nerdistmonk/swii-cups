@@ -22,7 +22,6 @@
 
 /* Band height used by the Mac driver's traces. */
 #define SWII_BAND_ROWS 256
-#define SWII_SPEED_HIGH 230400UL
 
 enum swii_model
 {
@@ -141,14 +140,6 @@ static int frame_text(const char *s)
 static int frame_query(unsigned char cmd)
 {
 	return send_frame(SWF_QUERY, &cmd, 1, NULL, 0);
-}
-
-static int frame_speed(unsigned long bps)
-{
-	unsigned char b[4];
-
-	swf_put_le32(b, bps);
-	return send_frame(SWF_SPEED, b, sizeof b, NULL, 0);
 }
 
 static int ppd_default(const char *path, const char *key,
@@ -270,11 +261,10 @@ static int job_init(const struct swii_options *o)
 
 	if(o->model == MODEL_SW2)
 	{
-		/* The backend sends 'h' at this frame if the printer is still at 57600. */
+		/* No 'h' or 230400 speed switch: the job stays at the port's 57600. */
 		if(frame_query('2') < 0 || frame_query('B') < 0 ||
-				frame_speed(SWII_SPEED_HIGH) < 0 || frame_text("u") < 0 ||
-				frame_query('H') < 0 || frame_text("bDA") < 0 ||
-				frame_query('2') < 0)
+				frame_text("u") < 0 || frame_query('H') < 0 ||
+				frame_text("bDA") < 0 || frame_query('2') < 0)
 			return -1;
 	}
 
