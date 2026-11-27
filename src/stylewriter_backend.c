@@ -27,6 +27,8 @@
 #define SWII_USLEEP_US 100000L
 #define SWII_STATUS_TIMEOUT_MS 10000
 #define SWII_RESET_TIMEOUT_S 60
+#define SWII_ROOM_TIMEOUT_S 60
+#define SWII_ROOM_MAX (0xF7UL * 256UL)
 #define SWII_PAPER_RETRY_S 5
 #define SWII_QUERY_PAUSE_US 200000L
 #define SWII_RESET_SETTLE_S 2
@@ -217,7 +219,7 @@ static void set_paper_warning(int on)
 	fprintf(stderr, "STATE: %cmedia-empty-warning\n", on ? '+' : '-');
 }
 
-/* Checks paper and errors once. The 'B' buffer status is not polled. */
+/* Checks paper and errors once. Buffer room is checked by wait_for_room(). */
 static void check_status(int wp, int can_handle)
 {
 	int c2 = get_status('2');
@@ -319,6 +321,27 @@ static void set_speed(unsigned long bps)
 		fail_job("Serial port setup failed: %s", strerror(errno));
 }
 
+/* 'B' reports free printer input in 256-byte units. */
+static void wait_for_room(unsigned long need)
+{
+	long long deadline = now_ms() + SWII_ROOM_TIMEOUT_S * 1000LL;
+
+	for(;;)
+	{
+		int b = get_status('B');
+
+		if(b < 0)
+			fail_job("Printer did not respond to buffer query");
+		/* TEMPORARY measurement log, remove after the buffer is measured. */
+		fprintf(stderr, "INFO: buffer B=0x%02x need=%lu\n", b, need);
+		if((unsigned long)b * 256UL >= need)
+			return;
+		if(now_ms() > deadline)
+			fail_job("Printer buffer did not drain");
+		nap(SWII_USLEEP_US);
+	}
+}
+
 static void send_rect(int type, unsigned long top, unsigned long bottom,
 		unsigned long right)
 {
@@ -355,6 +378,17 @@ static void send_data_chunks(const unsigned char *data, unsigned long len)
 	} while(len > 0);
 }
 
+/* Printer input one band needs: its rect, then G blocks of up to SWII_G_CHUNK,
+ * each with a 3-byte header and a terminator. A band larger than the buffer
+ * waits for the whole buffer. */
+static unsigned long band_room(unsigned long dlen)
+{
+	unsigned long chunks = dlen ? (dlen + SWII_G_CHUNK - 1) / SWII_G_CHUNK : 1;
+	unsigned long need = 9 + dlen + 4 * chunks;
+
+	return need > SWII_ROOM_MAX ? SWII_ROOM_MAX : need;
+}
+
 static void send_band(const unsigned char *p, unsigned long len)
 {
 	int flags = p[0];
@@ -365,11 +399,13 @@ static void send_band(const unsigned char *p, unsigned long len)
 	unsigned long dlen = len - SWF_BAND_HDR_SIZE;
 	int color = (flags & SWF_BAND_COLOR) ? 'c' : 'R';
 	int wp = flags & SWF_BAND_WAITPAPER;
+	unsigned long room = band_room(dlen);
 
 	g_page_active = 1;
 	check_status(wp, 0);
 	for(;;)
 	{
+		wait_for_room(room);
 		send_rect(color, top, bottom, right);
 		send_data_chunks(data, dlen);
 		if(!(flags & SWF_BAND_FIRST))
