@@ -77,6 +77,10 @@ You need CMake, GCC, and the CUPS development files. On Debian or Ubuntu:
 
     sudo apt install cmake gcc libcups2-dev
 
+On Arch Linux:
+
+    sudo pacman -S --needed cmake gcc cups libcups
+
 Build and run the tests:
 
     cmake -S . -B build
@@ -89,7 +93,7 @@ Install the filter, the backend, and the PPDs:
 
 The filter goes in `<serverbin>/filter`, the backend in `<serverbin>/backend`, and the PPDs in `/usr/share/cups/model`. The default `<serverbin>` is `/usr/lib/cups`. Run `cups-config --serverbin` to see yours. If it differs, configure with `-DSWII_CUPS_SERVERBIN=<path>`, and use `-DSWII_CUPS_MODELDIR=<path>` for the PPDs.
 
-Plug in the serial adapter and check which device it appeared as (usually `/dev/ttyUSB0`, shown by `dmesg`). Then add the printers:
+Plug in the serial adapter. The backend lists USB serial devices (`/dev/ttyUSB*` and `/dev/ttyACM*`), so the printer should appear in `lpinfo -v` as `stylewriter:/dev/ttyUSB0`. It should also appear in the Add Printer dialog of your desktop, or at http://localhost:631. Choose the matching PPD there. To add it from the command line instead:
 
     sudo lpadmin -p SW2 -E -v stylewriter:/dev/ttyUSB0 -P /usr/share/cups/model/stylewriter-bw.ppd
     sudo lpadmin -p SW1500 -E -v stylewriter:/dev/ttyUSB0 -P /usr/share/cups/model/stylewriter-color.ppd

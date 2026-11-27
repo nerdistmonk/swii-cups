@@ -8,6 +8,8 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#include <glob.h>
+#include <limits.h>
 #include <poll.h>
 #include <signal.h>
 #include <stdarg.h>
@@ -589,13 +591,38 @@ static void on_term(int sig)
 	g_cancel = 1;
 }
 
+static void list_devices(void)
+{
+	static const char *const patterns[] = { "/dev/ttyUSB*", "/dev/ttyACM*" };
+	char uri[sizeof SWII_URI_PREFIX + PATH_MAX];
+	char info[PATH_MAX + 64];
+	glob_t g;
+	size_t i, j;
+
+	for(i = 0; i < sizeof patterns / sizeof patterns[0]; i++)
+	{
+		if(glob(patterns[i], 0, NULL, &g) != 0)
+			continue;
+		for(j = 0; j < g.gl_pathc; j++)
+		{
+			snprintf(uri, sizeof uri, "%s%s", SWII_URI_PREFIX, g.gl_pathv[j]);
+			snprintf(info, sizeof info, "Apple StyleWriter on %s", g.gl_pathv[j]);
+			cupsBackendReport("direct", uri, "Apple StyleWriter", info, NULL, NULL);
+		}
+		globfree(&g);
+	}
+}
+
 int main(int argc, char *argv[])
 {
 	struct sigaction sa;
 	const char *path;
 
 	if(argc == 1)
+	{
+		list_devices();
 		return CUPS_BACKEND_OK;
+	}
 	if(argc != 6 && argc != 7)
 	{
 		fprintf(stderr, "ERROR: Usage: %s job-id user title copies options [file]\n",
