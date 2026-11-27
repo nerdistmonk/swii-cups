@@ -25,7 +25,7 @@ target_link_libraries(rastertostylewriter PRIVATE swii_encode ${CUPS_LIBRARIES})
 
 add_executable(stylewriter src/stylewriter_backend.c)
 target_include_directories(stylewriter PRIVATE ${CUPS_INCLUDE_DIR})
-target_link_libraries(stylewriter PRIVATE ${CUPS_LIBRARIES})
+target_link_libraries(stylewriter PRIVATE swii_encode ${CUPS_LIBRARIES})
 
 enable_testing()
 add_executable(test_encode tests/test_encode.c)

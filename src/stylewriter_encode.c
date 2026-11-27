@@ -93,3 +93,36 @@ size_t swii_encode_row(const unsigned char *src, size_t srcLen,
 
 	return d;
 }
+
+size_t swii_row_len(const unsigned char *src, size_t srcLen, size_t rowBytes)
+{
+	size_t p = 0, o = 0;
+
+	if(srcLen == 0 || rowBytes == 0)
+		return srcLen;
+	if(src[0] == MASK_RUNWHT)
+		return 1;
+	while(o < rowBytes && p < srcLen)
+	{
+		unsigned char op = src[p++];
+
+		if(op < MASK_RUNWHT)
+		{
+			if(op == 0 || op > srcLen - p)
+				return srcLen;
+			p += op;
+			o += op;
+		}
+		else
+		{
+			size_t n = op >= MASK_RUNBLK ? op - MASK_RUNBLK : op - MASK_RUNWHT;
+
+			if(n == 0)
+				return srcLen;
+			o += n;
+		}
+	}
+	if(o != rowBytes)
+		return srcLen;
+	return p;
+}

@@ -64,6 +64,12 @@ static inline unsigned long swf_get_le32(const unsigned char *p)
 size_t swii_encode_row(const unsigned char *src, size_t srcLen,
 		unsigned char *dst, size_t rowBytes);
 
+/*
+ * Length in bytes of the encoded row at the start of src, for rows of rowBytes
+ * bytes. Returns srcLen when the data does not hold a complete row.
+ */
+size_t swii_row_len(const unsigned char *src, size_t srcLen, size_t rowBytes);
+
 /* Upper bound on the output of swii_encode_row. */
 static inline size_t swii_encode_max(size_t srcLen, size_t rowBytes)
 {

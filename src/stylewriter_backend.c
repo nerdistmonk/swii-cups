@@ -40,8 +40,6 @@
  * (type, LE16 length, data, terminator). */
 #define SWII_RECT_LEN 9
 #define SWII_G_OVERHEAD 4
-/* 'B' reads 0xF8 at job start, but 0xF7 once a page has printed. */
-#define SWII_BUF_IDLE 0xF7
 #define SWII_URI_PREFIX "stylewriter:"
 
 static int g_fd = -1;
@@ -376,36 +374,6 @@ static void wait_for_room(unsigned long need)
 	}
 }
 
-/* The printer appears to discard unconsumed input at the formfeed, so wait
- * until the buffer is drained first. Progress resets the timeout, so a slow
- * print does not fail. */
-static void wait_for_drain(void)
-{
-	long long deadline = now_ms() + SWII_ROOM_TIMEOUT_S * 1000LL;
-	int best = -1;
-
-	for(;;)
-	{
-		int b = get_status('B');
-
-		if(b < 0)
-			fail_job("Printer did not respond to buffer query");
-		if(b >= SWII_BUF_IDLE)
-			return;
-		if(b > best)
-		{
-			best = b;
-			deadline = now_ms() + SWII_ROOM_TIMEOUT_S * 1000LL;
-		}
-		if(now_ms() > deadline)
-		{
-			fprintf(stderr, "WARNING: Printer buffer did not drain before the end of the page\n");
-			return;
-		}
-		nap(SWII_USLEEP_US);
-	}
-}
-
 static void send_rect(int type, unsigned long top, unsigned long bottom,
 		unsigned long right)
 {
@@ -430,16 +398,37 @@ static void send_data(const unsigned char *data, unsigned long len)
 	write_all(&term, 1);
 }
 
+/* Length of the next 'G' block: whole rows, at most SWII_G_CHUNK bytes. A row
+ * longer than the cap is sent alone. */
+static unsigned long chunk_len(const unsigned char *data, unsigned long len,
+		unsigned long rowBytes)
+{
+	unsigned long n = 0;
+
+	if(len <= SWII_G_CHUNK)
+		return len;
+	while(n < len)
+	{
+		unsigned long r = swii_row_len(data + n, len - n, rowBytes);
+
+		if(n > 0 && n + r > SWII_G_CHUNK)
+			break;
+		n += r;
+	}
+	return n;
+}
+
 /* Waits for room before every G block after the first. The first block is
  * covered by send_band's wait, because no query may fall between a rect and
- * its first G block. */
-static void send_data_chunks(const unsigned char *data, unsigned long len)
+ * its first G block. Blocks end on row boundaries, as the Mac's do. */
+static void send_data_chunks(const unsigned char *data, unsigned long len,
+		unsigned long rowBytes)
 {
 	int first = 1;
 
 	do
 	{
-		unsigned long n = len > SWII_G_CHUNK ? SWII_G_CHUNK : len;
+		unsigned long n = chunk_len(data, len, rowBytes);
 
 		if(!first)
 			wait_for_room(n + SWII_G_OVERHEAD);
@@ -458,7 +447,8 @@ static void send_band(const unsigned char *p, unsigned long len)
 	unsigned long right = swf_get_le16(p + 5);
 	const unsigned char *data = p + SWF_BAND_HDR_SIZE;
 	unsigned long dlen = len - SWF_BAND_HDR_SIZE;
-	unsigned long first = dlen > SWII_G_CHUNK ? SWII_G_CHUNK : dlen;
+	unsigned long rowBytes = (right + 7) / 8;
+	unsigned long first = chunk_len(data, dlen, rowBytes);
 	int color = (flags & SWF_BAND_COLOR) ? 'c' : 'R';
 	int wp = flags & SWF_BAND_WAITPAPER;
 
@@ -468,7 +458,7 @@ static void send_band(const unsigned char *p, unsigned long len)
 	{
 		wait_for_room(SWII_RECT_LEN + first + SWII_G_OVERHEAD);
 		send_rect(color, top, bottom, right);
-		send_data_chunks(data, dlen);
+		send_data_chunks(data, dlen, rowBytes);
 		if(!(flags & SWF_BAND_FIRST))
 			return;
 
@@ -504,7 +494,6 @@ static void end_page(int poll, int wp)
 	static const unsigned char formfeed = 0x0C;
 
 	check_status(wp, 0);
-	wait_for_drain();
 	write_all(&formfeed, 1);
 	if(poll)
 	{

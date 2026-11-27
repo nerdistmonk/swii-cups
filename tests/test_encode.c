@@ -53,10 +53,10 @@ static int decode_row(const unsigned char *in, size_t inLen,
 static int check_row(const char *name, const unsigned char *src, size_t srcLen,
 		size_t rowBytes)
 {
-	unsigned char *enc = malloc(swii_encode_max(srcLen, rowBytes));
+	unsigned char *enc = malloc(2 * swii_encode_max(srcLen, rowBytes));
 	unsigned char *dec = malloc(rowBytes);
 	unsigned char *want = calloc(rowBytes, 1);
-	size_t n;
+	size_t n, m;
 	int failed = 0;
 
 	if(!enc || !dec || !want)
@@ -73,6 +73,15 @@ static int check_row(const char *name, const unsigned char *src, size_t srcLen,
 	{
 		fprintf(stderr, "FAIL: %s (srcLen %zu, encoded %zu)\n",
 				name, srcLen, n);
+		failed = 1;
+	}
+
+	/* Row lengths must match the encoder even when another row follows. */
+	m = swii_encode_row(src, srcLen, enc + n, rowBytes);
+	if(swii_row_len(enc, n + m, rowBytes) != n ||
+			swii_row_len(enc + n, m, rowBytes) != m)
+	{
+		fprintf(stderr, "FAIL: %s row length (srcLen %zu)\n", name, srcLen);
 		failed = 1;
 	}
 
