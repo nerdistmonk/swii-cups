@@ -69,7 +69,10 @@ Known ident strings:
 Type 1 codes (prefix these with "\xFF\xFF\xFF"):
 
 "I" - Ejects the page and resets the printer.
-"1" - Returns something about the status of the printer.
+"1" - Returns something about the status of the printer.  On a StyleWriter
+	II, the Mac sends this after the form feed (0x0C) and keeps polling
+	while the reply is 0x01.  The last reply in the trace was 0x09, which
+	ended the loop.  The meaning of the values is a guess.
 "2" - Returns error status of the printer.  The return value may actually 
 	consist of bitfields.  Known return values:
 	0x00 -- nothing wrong
@@ -82,6 +85,10 @@ Type 1 codes (prefix these with "\xFF\xFF\xFF"):
 	in the buffer.  On the 2500, 0x80 means the buffer is empty, and lower
 	values indicate more data in the buffer.  I don't know what values
 	indicate a completely full buffer on either model.
+	On the StyleWriter II, 0xF8 was seen only at job start.  During a
+	page the Mac read 0x08 to 0x24, and it sent bands without waiting
+	for 0xF8 between them.  Whether the printer reports 0xF8 during a
+	long page is not known.
 
 "p" - Distinguishes between the printers that return 'CS'.  Known return 
 	values:
@@ -97,7 +104,8 @@ Type 1 codes (prefix these with "\xFF\xFF\xFF"):
 
 "H" - Tells something about the configuration of the printer.  The return
 	value may actually consist of bitfields.  Known return values:
-	0x01 -- Black ink cartridge installed (in 2400/2500)
+	0x01 -- Black ink cartridge installed (in 2400/2500; the StyleWriter II
+		also returned 0x01 in the trace)
 	0x81 -- Color ink cartridge installed (in 2400/2500)
 
 "R" - Not sure, but it seems to have something to do with turning on
@@ -124,6 +132,61 @@ setting up the printer.  I don't know exactly what some of them do.
 "m0nZAH" - Sets up for normal-quality printing.
 
 "m0sAB" - Sets up for high-quality printing.
+
+The following were seen in a StyleWriter II trace.  Their meanings are not
+known.  Each is sent as a single byte with no 0xFF prefix.
+
+"h" - Sent at 57600 baud, just before the baud rate is raised to 230400.
+
+"u" - Sent at 230400 baud, after the baud rate change.
+
+"b", "D", "A" - Sent after 'H' during setup.  This driver sends them as
+"bDA" in one write.
+
+
+StyleWriter II print sequence
+-----------------------------
+
+This sequence was captured from MacOS 7.6.1 printing one black page on a
+StyleWriter II, under Basilisk II, over a USB RS-422 adapter.  The trace
+covers one page only, so it says nothing about multi-page jobs.
+
+Setup:
+
+	reset ('I')
+	'2' query, '?' ident query (the Mac sends this; the driver does not)
+	'B' query (reply 0xF8)
+	'h', then the baud rate change to 230400 8N1
+	'u'
+	'H' query (reply 0x01)
+	'b', 'D', 'A'
+	'2' query
+
+Each band:
+
+	'R' header: left 0, right 2879.  Top is 256 times the band index.
+	Bottom is inclusive: 255 for the first band.  The last band on the
+	page covered rows 3584 to 3759 (176 rows).
+	'G' data
+	'2' query (reply 0x00)
+
+Page end:
+
+	0x0C (form feed)
+	'1' query, repeated while the reply is 0x01
+	'2' queries between the '1' queries (reply 0x00)
+	'E' and 'l'
+
+During the page the Mac polls '2' and 'B' while it sends band data.
+
+This driver differs from the trace in these ways:
+
+- It waits for 0xF8 before each band, as the original lpstyl did.  Whether
+  the StyleWriter II reports 0xF8 during a long page is not known.
+- It sizes each band to fill the printer's buffer, as the original did, so
+  its bands are not always 256 rows.  This has not been checked on hardware.
+- It sends neither 'E' nor 'l'.  The original lpstyl had code to send "El"
+  at the end of a page, commented out.
 
 
 Image Data
