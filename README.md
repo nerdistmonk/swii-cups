@@ -2,7 +2,7 @@
 
 A CUPS driver for Apple StyleWriter printers, for modern Linux.
 
-This is a fork of lpstyl 0.9.9 by Monroe Williams (<https://github.com/Godzil/lpstyl>). The original driver was written for NetBSD and other old Unix systems, and it needed obsolete system features and install paths. This version is rebuilt as a CUPS filter and backend, built with CMake and GCC.
+This is a forked rewrite of lpstyl by Monroe Williams (<https://github.com/Godzil/lpstyl>). The original driver was written for NetBSD and other old Unix systems, and it needed obsolete system features and install paths. This version is rebuilt as a CUPS filter and backend, built with CMake and GCC.
 
 Status: the code builds without warnings and the encoder test passes. Tested with CUPS 2.4.7 and ghostscript 10.02. It has not yet been tested with a real printer.
 
@@ -111,18 +111,7 @@ Use the device URI form `stylewriter:` followed by an absolute path. The example
 - `README.protocol`: notes on the control protocol the printers use.
 - `LICENSE`: the license.
 
-## CONTACTS
+## Copyright Notice
 
-The original author can (still?) be reached via email at monroe@pobox.com.
-The original homepage of this project was <http://www.pobox.com/~monroe/styl/>.
-The page is no longer valid but can still be viewed on the web archive: 
-<https://web-beta.archive.org/web/20120507043647/http://homepage.mac.com/monroe/styl/>
-
-If you use this driver successfully, or want to use it but can't
-get it to work, feel free to send me email.  If you make improvements
-to or have questions about this package, please do send them my
-way.
-
--- Monroe Williams  a.k.a.  monroe@pobox.com --
-
-Copyright 1996-2000 Monroe Williams, all rights reserved.
+lpstyl was originally designed by Monroe Williams and his original lpstyl code is copyright 2000, Monrow Williams, all rights reserved.
+All newly contributed code for the refactor/rewrite into swii-cups was designed by R.Shaklfrd and Claude Haiku.
