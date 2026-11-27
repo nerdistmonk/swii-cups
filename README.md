@@ -2,9 +2,9 @@
 
 A CUPS driver for Apple StyleWriter printers, for modern Linux.
 
-This is a forked rewrite of lpstyl by Monroe Williams (<https://github.com/Godzil/lpstyl>). The original driver was written for NetBSD and other old Unix systems, and it needed obsolete system features and install paths. This version is rebuilt as a CUPS filter and backend, built with CMake and GCC.
+This is a total rewrite of lpstyl by Monroe Williams (<https://github.com/Godzil/lpstyl>). The original driver was written for NetBSD and other old Unix systems, and it needed obsolete system features and install paths. This version is rebuilt as a CUPS filter and backend, built with CMake and GCC.
 
-Status: the code builds without warnings and the encoder test passes. Tested with CUPS 2.4.7 and ghostscript 10.02. It has not yet been tested with a real printer.
+Status: the code builds without warnings and the encoder test passes. Tested with CUPS 2.4.7 and ghostscript 10.02. It is verified working on an Apple StyleWriter II.
 
 ### Supported printers
 
